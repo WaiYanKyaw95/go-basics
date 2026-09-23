@@ -1,0 +1,3 @@
+module ledserver
+
+go 1.27.1

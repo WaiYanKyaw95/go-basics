@@ -1,0 +1,6 @@
+# compiled binary
+ledserver
+ledserver.exe
+
+# environment
+.env
