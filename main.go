@@ -15,9 +15,6 @@ type Item struct {
 	Name string `json:"name"`
 }
 
-var items = []Item{}
-var nextID int = 1
-
 func main() {
 	host := "localhost"
 	port := "8080"
@@ -25,6 +22,7 @@ func main() {
 	// set the address
 	address := host + ":" + port
 
+	// initiate the connection with database.
 	db := initDB()
 	defer db.Close()
 	listener, err := net.Listen("tcp", address)
@@ -63,8 +61,6 @@ func parseRequest(rawRequest string) (string, string, string) {
 }
 
 func handleConnection(conn net.Conn, db *sql.DB) {
-	var response string
-
 	defer conn.Close()
 
 	buffer := make([]byte, 1024)
@@ -74,14 +70,11 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 	parts := strings.Split(path, "/")
 
 	if method == "GET" && path == "/" {
-		message := "Hello from the server side."
-		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%s", message)
+		writeText(conn, 200, "OK", "Hello from the server side.")
 	} else if method == "GET" && path == "/items" {
 		rows, err := db.Query("SELECT * FROM items")
 		if err != nil {
-			message := "Database error."
-			response = fmt.Sprintf("HTTP/1.1 500 Internal Server Error\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 500, "Internal Server Error", "Database error.")
 			return
 		}
 		defer rows.Close()
@@ -92,115 +85,106 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 			result = append(result, item)
 		}
 		if err := rows.Err(); err != nil {
-			message := "Database error."
-			response = fmt.Sprintf("HTTP/1.1 500 Internal Server Error\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 500, "Internal Server Error", "Database error.")
 			return
 		}
-		message, _ := json.Marshal(result)
-		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
+		writeJSON(conn, 200, "OK", result)
 	} else if method == "GET" && len(parts) == 3 && parts[1] == "items" {
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
-			message := "Bad Request."
-			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 400, "Bad Request", "Bad Request.")
 			return
 		}
 		row := db.QueryRow("SELECT * FROM items WHERE id = ?", id)
 		var item Item
 		err = row.Scan(&item.ID, &item.Name)
 		if err == sql.ErrNoRows {
-			message := "Item not found."
-			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 404, "Not Found", "Item not found.")
 			return
 		} else if err != nil {
-			message := "Internal Server Error."
-			response = fmt.Sprintf("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 500, "Internal Server Error", "Database error.")
 			return
 		}
-		message, _ := json.Marshal(item)
-		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
-	} else if method == "DELETE" && len(parts) == 3 && parts[1] == "items" {
-		foundIndex := -1
-		var deletedItem Item
-		id, err := strconv.Atoi(parts[2])
-		if err != nil {
-			message := "Bad Request."
-			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
-			conn.Write([]byte(response))
-			return
-		}
-		for index, item := range items {
-			if item.ID == id {
-				foundIndex = index
-				deletedItem = item
-				break
-			}
-		}
-		if foundIndex == -1 {
-			message := "Item not found."
-			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
-		} else {
-			// returns with 200 and deleted item
-			items = append(items[:foundIndex], items[foundIndex+1:]...)
-			message, _ := json.Marshal(deletedItem)
-			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
-		}
-	} else if method == "PUT" && len(parts) == 3 && parts[1] == "items" {
-		var updatedItem Item
-		foundIndex := -1
-		id, err := strconv.Atoi(parts[2])
-		if err != nil {
-			message := "Bad Request."
-			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
-			conn.Write([]byte(response))
-			return
-		}
-		json.Unmarshal([]byte(body), &updatedItem)
-
-		for index, item := range items {
-			if item.ID == id {
-				foundIndex = index
-				break
-			}
-		}
-
-		if foundIndex == -1 {
-			message := "Item not found."
-			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
-		} else {
-			// returns with 200 and updated item
-			items[foundIndex].Name = updatedItem.Name
-			message, _ := json.Marshal(items[foundIndex])
-			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
-		}
-
+		writeJSON(conn, 200, "OK", item)
 	} else if method == "POST" && path == "/items" {
 		var item Item
 		json.Unmarshal([]byte(body), &item)
 
 		result, err := db.Exec("INSERT INTO items (name) VALUES (?)", item.Name)
 		if err != nil {
-			message := "Database error."
-			response = fmt.Sprintf("HTTP/1.1 500 Internal Server Error\r\n\r\n%s", message)
-			conn.Write([]byte(response))
+			writeText(conn, 500, "Internal Server Error", "Database error.")
 			return
 		}
 		id, _ := result.LastInsertId()
 		newItem := Item{ID: int(id), Name: item.Name}
-		message, _ := json.Marshal(newItem)
-		response = fmt.Sprintf("HTTP/1.1 201 Created\r\nContent-Type: application/json\r\n\r\n%s", string(message))
-	} else {
-		message := "Not Found."
-		response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
-	}
+		writeJSON(conn, 201, "Created", newItem)
+	} else if method == "PUT" && len(parts) == 3 && parts[1] == "items" {
+		var updatedBody Item
+		// catch bad request such as /items/abc
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			writeText(conn, 400, "Bad Request", "Request could not be resolved.")
+			return
+		}
+		json.Unmarshal([]byte(body), &updatedBody)
 
-	_, err := conn.Write([]byte(response))
-	if err != nil {
-		fmt.Println("error writing response:", err)
+		var item Item
+		row := db.QueryRow("SELECT * FROM items WHERE id = ?", id)
+		err = row.Scan(&item.ID, &item.Name)
+		if err == sql.ErrNoRows {
+			writeText(conn, 404, "Not Found", "Item not found.")
+			return
+		} else if err != nil {
+			writeText(conn, 500, "Internal Server Error", "Database error.")
+			return
+		}
+
+		_, err = db.Exec("UPDATE items SET name = ? WHERE id = ?", updatedBody.Name, id)
+		if err != nil {
+			writeText(conn, 500, "Internal Server Error", "Database error.")
+			return
+		}
+
+		updatedItem := Item{ID: id, Name: updatedBody.Name}
+		writeJSON(conn, 200, "OK", updatedItem)
+	} else if method == "DELETE" && len(parts) == 3 && parts[1] == "items" {
+		// catch bad request such as /items/abc
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			writeText(conn, 400, "Bad Request", "Request could not be resolved.")
+			return
+		}
+
+		row := db.QueryRow("SELECT * FROM items WHERE id = ?", id)
+		// temporary Item to give it back to the client in the response.
+		var deletedItem Item
+		err = row.Scan(&deletedItem.ID, &deletedItem.Name)
+		if err == sql.ErrNoRows {
+			writeText(conn, 404, "Not Found", "Item not found.")
+			return
+		} else if err != nil {
+			writeText(conn, 500, "Internal Server Error", "Database error.")
+			return
+		}
+		_, err = db.Exec("DELETE FROM items WHERE id = ?", id)
+		if err != nil {
+			writeText(conn, 500, "Internal Server Error", "Database error.")
+			return
+		}
+		writeJSON(conn, 200, "OK", deletedItem)
+	} else {
+		writeText(conn, 404, "Not Found", "Requested page not found.")
 	}
+}
+
+func writeJSON(conn net.Conn, status int, statusText string, data interface{}) {
+	body, _ := json.Marshal(data)
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: application/json\r\n\r\n%s", status, statusText, string(body))
+	conn.Write([]byte(response))
+}
+
+func writeText(conn net.Conn, status int, statusText string, message string) {
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: text/html\r\n\r\n%s", status, statusText, message)
+	conn.Write([]byte(response))
 }
