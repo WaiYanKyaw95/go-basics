@@ -78,6 +78,7 @@ func handleConnection(conn net.Conn) {
 		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
 	} else if method == "GET" && len(parts) == 3 && parts[1] == "items" {
 		found := false
+		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
 			message := "Bad Request."
@@ -96,6 +97,32 @@ func handleConnection(conn net.Conn) {
 		if !found {
 			message := "Item not found."
 			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
+		}
+	} else if method == "DELETE" && len(parts) == 3 && parts[1] == "items" {
+		foundIndex := -1
+		var deletedItem Item
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			message := "Bad Request."
+			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
+			conn.Write([]byte(response))
+			return
+		}
+		for index, item := range items {
+			if item.ID == id {
+				foundIndex = index
+				deletedItem = item
+				break
+			}
+		}
+		if foundIndex == -1 {
+			message := "Item not found."
+			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
+		} else {
+			// returns with 200 and deleted item
+			items = append(items[:foundIndex], items[foundIndex+1:]...)
+			message, _ := json.Marshal(deletedItem)
+			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
 		}
 	} else if method == "POST" && path == "/items" {
 		var item Item
