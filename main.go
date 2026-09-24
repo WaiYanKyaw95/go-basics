@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -12,7 +14,7 @@ type Item struct {
 	Name string `json:"name"`
 }
 
-var items []Item
+var items = []Item{}
 var nextID int = 1
 
 func main() {
@@ -65,19 +67,49 @@ func handleConnection(conn net.Conn) {
 	buffer := make([]byte, 1024)
 	n, _ := conn.Read(buffer)
 	method, path, body := parseRequest(string(buffer[:n]))
-
-	fmt.Println(body)
+	parts := strings.Split(path, "/")
+	// fmt.Println(body)
 
 	if method == "GET" && path == "/" {
-		response = "HTTP/1.1 200 OK\r\n" +
-			"Content-Type: text/html\r\n" +
-			"\r\n" +
-			"Hello from the server side."
+		message := "Hello from the server side."
+		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%s", message)
+	} else if method == "GET" && path == "/items" {
+		message, _ := json.Marshal(items)
+		response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
+	} else if method == "GET" && len(parts) == 3 && parts[1] == "items" {
+		found := false
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			message := "Bad Request."
+			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
+			conn.Write([]byte(response))
+			return
+		}
+		for _, item := range items {
+			if item.ID == id {
+				found = true
+				message, _ := json.Marshal(item)
+				response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
+				break
+			}
+		}
+		if !found {
+			message := "Item not found."
+			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
+		}
+	} else if method == "POST" && path == "/items" {
+		var item Item
+		json.Unmarshal([]byte(body), &item)
+
+		item.ID = nextID
+		nextID++
+
+		items = append(items, item)
+		message, _ := json.Marshal(item)
+		response = fmt.Sprintf("HTTP/1.1 201 Created\r\nContent-Type: application/json\r\n\r\n%s", string(message))
 	} else {
-		response = "HTTP/1.1 404 NOT FOUND\r\n" +
-			"Content-Type: text/html\r\n" +
-			"\r\n" +
-			"Not Found."
+		message := "Not Found."
+		response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
 	}
 
 	_, err := conn.Write([]byte(response))
