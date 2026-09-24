@@ -2,5 +2,11 @@
 ledserver
 ledserver.exe
 
+# sqlite3 cli tool
+sqlite3.exe
+
+# database file
+*.db
+
 # environment
 .env
