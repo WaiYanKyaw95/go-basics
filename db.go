@@ -23,5 +23,25 @@ func initDB() *sql.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		password TEXT NOT NULL
+	)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		token TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL
+	)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return db
 }

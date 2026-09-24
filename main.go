@@ -173,6 +173,8 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 			return
 		}
 		writeJSON(conn, 200, "OK", deletedItem)
+	} else if method == "POST" && path == "/register" {
+		register(conn, body, db)
 	} else {
 		writeText(conn, 404, "Not Found", "Requested page not found.")
 	}
