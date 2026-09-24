@@ -67,8 +67,8 @@ func handleConnection(conn net.Conn) {
 	buffer := make([]byte, 1024)
 	n, _ := conn.Read(buffer)
 	method, path, body := parseRequest(string(buffer[:n]))
+	// to check the length of path
 	parts := strings.Split(path, "/")
-	// fmt.Println(body)
 
 	if method == "GET" && path == "/" {
 		message := "Hello from the server side."
@@ -124,6 +124,34 @@ func handleConnection(conn net.Conn) {
 			message, _ := json.Marshal(deletedItem)
 			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
 		}
+	} else if method == "PUT" && len(parts) == 3 && parts[1] == "items" {
+		var updatedItem Item
+		foundIndex := -1
+		id, err := strconv.Atoi(parts[2])
+		if err != nil {
+			message := "Bad Request."
+			response = fmt.Sprintf("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n%s", message)
+			conn.Write([]byte(response))
+			return
+		}
+		json.Unmarshal([]byte(body), &updatedItem)
+
+		for index, item := range items {
+			if item.ID == id {
+				foundIndex = index
+				break
+			}
+		}
+
+		if foundIndex == -1 {
+			message := "Item not found."
+			response = fmt.Sprintf("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n%s", message)
+		} else {
+			items[foundIndex].Name = updatedItem.Name
+			message, _ := json.Marshal(items[foundIndex])
+			response = fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", string(message))
+		}
+
 	} else if method == "POST" && path == "/items" {
 		var item Item
 		json.Unmarshal([]byte(body), &item)
