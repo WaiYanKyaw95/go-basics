@@ -127,3 +127,37 @@ func getCookie(rawRequest string, name string) string {
 	// return "" if not found
 	return ""
 }
+
+func getSessionUser(rawRequest string, db *sql.DB) (*User, error) {
+	var user User
+
+	// get the session cookie
+	token := getCookie(rawRequest, "session")
+
+	// if no cookie -> return error
+	if token == "" {
+		return nil, fmt.Errorf("unauthorized")
+	}
+
+	// look up token in the sessions table
+	row := db.QueryRow("SELECT user_id FROM sessions WHERE token = ?", token)
+	err := row.Scan(&user.ID)
+
+	// if no session -> token invalid -> return error
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("unauthorized")
+	} else if err != nil {
+		return nil, fmt.Errorf("unauthorized")
+	}
+
+	// get the actual user
+	row = db.QueryRow("SELECT id, username FROM users WHERE id = ?", user.ID)
+	err = row.Scan(&user.ID, &user.Username)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("unauthorized")
+	} else if err != nil {
+		return nil, fmt.Errorf("unauthorized")
+	}
+	// return the user
+	return &user, nil
+}

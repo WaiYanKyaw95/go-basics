@@ -119,6 +119,14 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		}
 		writeJSON(conn, 200, item)
 	} else if method == "POST" && path == "/items" {
+		// check authorization
+		_, err := getSessionUser(rawRequest, db)
+		if err != nil {
+			writeText(conn, 401, "Unauthorized.")
+			return
+		}
+
+		// handler
 		var item Item
 		json.Unmarshal([]byte(body), &item)
 
@@ -131,6 +139,14 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		newItem := Item{ID: int(id), Name: item.Name}
 		writeJSON(conn, 201, newItem)
 	} else if method == "PUT" && len(parts) == 3 && parts[1] == "items" {
+		// check authorization
+		_, err := getSessionUser(rawRequest, db)
+		if err != nil {
+			writeText(conn, 401, "Unauthorized.")
+			return
+		}
+
+		// handler
 		var updatedBody Item
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
@@ -160,6 +176,13 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		updatedItem := Item{ID: id, Name: updatedBody.Name}
 		writeJSON(conn, 200, updatedItem)
 	} else if method == "DELETE" && len(parts) == 3 && parts[1] == "items" {
+		// check authorization
+		_, err := getSessionUser(rawRequest, db)
+		if err != nil {
+			writeText(conn, 401, "Unauthorized.")
+			return
+		}
+
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
