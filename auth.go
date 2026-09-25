@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,34 +19,76 @@ type User struct {
 	Password string `json:"-"`
 }
 
+type LoginInput struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 func register(conn net.Conn, body string, db *sql.DB) {
-	var info User
+	var info LoginInput
 	json.Unmarshal([]byte(body), &info)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(info.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeText(conn, 500, "Internal Server Error", "Could not hash password.")
+		writeText(conn, 500, "Could not hash password.")
 		return
 	}
 	result, err := db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", info.Username, string(hash))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			writeText(conn, 409, "Conflict", "Username already taken.")
+			writeText(conn, 409, "Username already taken.")
 			return
 		}
-		writeText(conn, 500, "Internal Server Error", "Database error.")
+		writeText(conn, 500, "Database error.")
 		return
 	}
 	id, _ := result.LastInsertId()
 	newUser := User{ID: int(id), Username: info.Username}
-	writeJSON(conn, 201, "Created", newUser)
+	writeJSON(conn, 201, newUser)
 }
 
 func login(conn net.Conn, body string, db *sql.DB) {
 	// get the username and password
+	var info LoginInput // what the client sent
+	var user User       // what we retrieved from the database
+	json.Unmarshal([]byte(body), &info)
+
 	// check if the user is there
+	row := db.QueryRow("SELECT id, username, password FROM users WHERE username = ?", info.Username)
+	err := row.Scan(&user.ID, &user.Username, &user.Password)
+
 	// if not found, 401
+	if err == sql.ErrNoRows {
+		writeText(conn, 401, "Invalid Crendentials.")
+		return
+	} else if err != nil {
+		writeText(conn, 500, "Database error.")
+		return
+	}
+
 	// compare the password with hash
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(info.Password))
+
 	// if not match, 401
+	if err != nil {
+		writeText(conn, 401, "Invalid Crendentials.")
+		return
+	}
 	// generate a token, store in sessions and send cookie
+	bytes := make([]byte, 32)
+	rand.Read(bytes)
+	token := hex.EncodeToString(bytes)
+
+	_, err = db.Exec("INSERT INTO sessions (user_id, token, created_at) VALUES (?, ?, ?)", user.ID, token, time.Now().Format(time.RFC3339))
+	if err != nil {
+		writeText(conn, 500, "Database error.")
+		return
+	}
+
+	response := fmt.Sprintf(
+		"HTTP/1.1 200 OK\r\nSet-Cookie: session=%s; HttpOnly\r\nContent-Type: application/json\r\n\r\n%s",
+		token,
+		`{"message": "logged in successfully"}`,
+	)
+	conn.Write([]byte(response))
 }

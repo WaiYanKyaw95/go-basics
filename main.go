@@ -15,6 +15,16 @@ type Item struct {
 	Name string `json:"name"`
 }
 
+var statusText = map[int]string{
+	200: "OK",
+	201: "Created",
+	400: "Bad Request",
+	401: "Unauthorized",
+	404: "Not Found",
+	409: "Conflict",
+	500: "Internal Server Error",
+}
+
 func main() {
 	host := "localhost"
 	port := "8080"
@@ -70,11 +80,11 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 	parts := strings.Split(path, "/")
 
 	if method == "GET" && path == "/" {
-		writeText(conn, 200, "OK", "Hello from the server side.")
+		writeText(conn, 200, "Hello from the server side.")
 	} else if method == "GET" && path == "/items" {
 		rows, err := db.Query("SELECT * FROM items")
 		if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
 		defer rows.Close()
@@ -85,46 +95,46 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 			result = append(result, item)
 		}
 		if err := rows.Err(); err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
-		writeJSON(conn, 200, "OK", result)
+		writeJSON(conn, 200, result)
 	} else if method == "GET" && len(parts) == 3 && parts[1] == "items" {
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
-			writeText(conn, 400, "Bad Request", "Bad Request.")
+			writeText(conn, 400, "Bad Request.")
 			return
 		}
 		row := db.QueryRow("SELECT * FROM items WHERE id = ?", id)
 		var item Item
 		err = row.Scan(&item.ID, &item.Name)
 		if err == sql.ErrNoRows {
-			writeText(conn, 404, "Not Found", "Item not found.")
+			writeText(conn, 404, "Item not found.")
 			return
 		} else if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
-		writeJSON(conn, 200, "OK", item)
+		writeJSON(conn, 200, item)
 	} else if method == "POST" && path == "/items" {
 		var item Item
 		json.Unmarshal([]byte(body), &item)
 
 		result, err := db.Exec("INSERT INTO items (name) VALUES (?)", item.Name)
 		if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
 		id, _ := result.LastInsertId()
 		newItem := Item{ID: int(id), Name: item.Name}
-		writeJSON(conn, 201, "Created", newItem)
+		writeJSON(conn, 201, newItem)
 	} else if method == "PUT" && len(parts) == 3 && parts[1] == "items" {
 		var updatedBody Item
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
-			writeText(conn, 400, "Bad Request", "Request could not be resolved.")
+			writeText(conn, 400, "Request could not be resolved.")
 			return
 		}
 		json.Unmarshal([]byte(body), &updatedBody)
@@ -133,26 +143,26 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		row := db.QueryRow("SELECT * FROM items WHERE id = ?", id)
 		err = row.Scan(&item.ID, &item.Name)
 		if err == sql.ErrNoRows {
-			writeText(conn, 404, "Not Found", "Item not found.")
+			writeText(conn, 404, "Item not found.")
 			return
 		} else if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
 
 		_, err = db.Exec("UPDATE items SET name = ? WHERE id = ?", updatedBody.Name, id)
 		if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
 
 		updatedItem := Item{ID: id, Name: updatedBody.Name}
-		writeJSON(conn, 200, "OK", updatedItem)
+		writeJSON(conn, 200, updatedItem)
 	} else if method == "DELETE" && len(parts) == 3 && parts[1] == "items" {
 		// catch bad request such as /items/abc
 		id, err := strconv.Atoi(parts[2])
 		if err != nil {
-			writeText(conn, 400, "Bad Request", "Request could not be resolved.")
+			writeText(conn, 400, "Request could not be resolved.")
 			return
 		}
 
@@ -161,32 +171,34 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		var deletedItem Item
 		err = row.Scan(&deletedItem.ID, &deletedItem.Name)
 		if err == sql.ErrNoRows {
-			writeText(conn, 404, "Not Found", "Item not found.")
+			writeText(conn, 404, "Item not found.")
 			return
 		} else if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
 		_, err = db.Exec("DELETE FROM items WHERE id = ?", id)
 		if err != nil {
-			writeText(conn, 500, "Internal Server Error", "Database error.")
+			writeText(conn, 500, "Database error.")
 			return
 		}
-		writeJSON(conn, 200, "OK", deletedItem)
+		writeJSON(conn, 200, deletedItem)
 	} else if method == "POST" && path == "/register" {
 		register(conn, body, db)
+	} else if method == "POST" && path == "/login" {
+		login(conn, body, db)
 	} else {
-		writeText(conn, 404, "Not Found", "Requested page not found.")
+		writeText(conn, 404, "Requested page not found.")
 	}
 }
 
-func writeJSON(conn net.Conn, status int, statusText string, data interface{}) {
+func writeJSON(conn net.Conn, status int, data interface{}) {
 	body, _ := json.Marshal(data)
-	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: application/json\r\n\r\n%s", status, statusText, string(body))
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: application/json\r\n\r\n%s", status, statusText[status], string(body))
 	conn.Write([]byte(response))
 }
 
-func writeText(conn net.Conn, status int, statusText string, message string) {
-	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: text/html\r\n\r\n%s", status, statusText, message)
+func writeText(conn net.Conn, status int, message string) {
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\nContent-Type: text/html\r\n\r\n%s", status, statusText[status], message)
 	conn.Write([]byte(response))
 }
