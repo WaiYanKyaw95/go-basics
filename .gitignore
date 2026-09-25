@@ -1,6 +1,6 @@
 # compiled binary
-ledserver
-ledserver.exe
+go-basics
+go-basics.exe
 
 # sqlite3 cli tool
 sqlite3.exe
