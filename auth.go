@@ -92,3 +92,38 @@ func login(conn net.Conn, body string, db *sql.DB) {
 	)
 	conn.Write([]byte(response))
 }
+
+func logout(conn net.Conn, rawRequest string, db *sql.DB) {
+	// get the session token from the request
+	token := getCookie(rawRequest, "session")
+	// if no token -> 401
+	if token == "" {
+		writeText(conn, 401, "No token included")
+		return
+	}
+	// DELETE FROM sessions WHERE token = ?
+	_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
+	if err != nil {
+		writeText(conn, 500, "Database error.")
+		return
+	}
+	// return 200 "logged out successfully"
+	writeText(conn, 200, "logged out successfully")
+}
+
+func getCookie(rawRequest string, name string) string {
+	// find the cookie by name
+	headers := strings.Split(rawRequest, "\r\n")
+	for _, header := range headers {
+		if strings.HasPrefix(header, "Cookie:") {
+			if strings.Contains(header, name) {
+				sessionKey := strings.SplitN(header, "=", 2)
+				value := strings.SplitN(sessionKey[1], ";", 2)[0]
+				// return its value
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	// return "" if not found
+	return ""
+}

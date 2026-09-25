@@ -75,7 +75,8 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 
 	buffer := make([]byte, 1024)
 	n, _ := conn.Read(buffer)
-	method, path, body := parseRequest(string(buffer[:n]))
+	rawRequest := string(buffer[:n])
+	method, path, body := parseRequest(rawRequest)
 	// to check the length of path
 	parts := strings.Split(path, "/")
 
@@ -187,6 +188,8 @@ func handleConnection(conn net.Conn, db *sql.DB) {
 		register(conn, body, db)
 	} else if method == "POST" && path == "/login" {
 		login(conn, body, db)
+	} else if method == "POST" && path == "/logout" {
+		logout(conn, rawRequest, db)
 	} else {
 		writeText(conn, 404, "Requested page not found.")
 	}
